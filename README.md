@@ -1,16 +1,30 @@
 # One-Tab Workspace Launcher
 
-A clean Chrome extension for saving groups of tabs as reusable workspaces.
+A clean Chrome extension for saving groups of tabs as reusable workspaces. Save a browser window, edit the stored tabs, and reopen that workspace whenever you need it.
 
 ## Features
 
-- Create named tab workspaces
-- Save the current browser window as a workspace
-- Edit stored tabs inside each workspace
-- Reorder, add, and remove saved tabs
-- Launch a workspace with one click
-- Import and export workspace JSON
-- Includes extension icon assets for Chrome
+- Create named workspaces for work, study, coding, research, or any tab setup.
+- Save the current Chrome window as a workspace.
+- Launch all tabs in a workspace with one click.
+- Search saved workspaces by name.
+- Edit each workspace name, color, and stored tabs.
+- Add, remove, and reorder stored tabs.
+- Require at least one valid tab URL before saving a workspace.
+- Export all workspaces to JSON.
+- Export a single workspace from the list or editor.
+- Import workspace JSON without accidentally overwriting saved data.
+- Choose how same-name imports are handled: versioned copy, combine, or overwrite.
+- Hard reset all saved workspaces with a confirmation warning.
+- Includes Chrome toolbar and extension page icon assets.
+
+## Import Options
+
+When an imported workspace has the same name as one already saved, the extension asks how to handle it:
+
+- **Versioned Copy**: keeps both workspaces and renames the imported one, such as `Work2`.
+- **Combine**: merges new URLs into the existing workspace and skips duplicate URLs.
+- **Overwrite**: replaces the existing same-name workspace with the imported one.
 
 ## Load In Chrome
 

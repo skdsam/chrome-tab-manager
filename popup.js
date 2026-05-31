@@ -19,6 +19,7 @@
     import: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v12M7 8l5-5 5 5M5 21h14"/></svg>',
     launch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 5l7 7-7 7"/></svg>',
     save: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/></svg>',
     x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>'
   };
@@ -31,6 +32,9 @@
     workspaces: [],
     editing: null,
     importPreview: null,
+    importConflictMode: "rename",
+    resetConfirmText: "",
+    searchQuery: "",
     toast: ""
   };
 
@@ -49,6 +53,8 @@
       app.innerHTML = renderEditor();
     } else if (state.view === "import") {
       app.innerHTML = renderImport();
+    } else if (state.view === "reset") {
+      app.innerHTML = renderReset();
     } else {
       app.innerHTML = renderList();
     }
@@ -61,6 +67,7 @@
   function renderList() {
     const totalTabs = state.workspaces.reduce((sum, workspace) => sum + workspace.tabs.length, 0);
     const empty = state.workspaces.length === 0;
+    const filteredWorkspaces = getFilteredWorkspaces();
 
     return `
       <header class="topbar">
@@ -70,7 +77,7 @@
           </div>
           <div class="title-stack">
             <h1 class="app-title">Workspace Launcher</h1>
-            <div class="meta">${state.workspaces.length} ${plural(state.workspaces.length, "workspace")} · ${totalTabs} ${plural(totalTabs, "tab")}</div>
+            <div class="meta">${state.workspaces.length} ${plural(state.workspaces.length, "workspace")} - ${totalTabs} ${plural(totalTabs, "tab")}</div>
           </div>
         </div>
       </header>
@@ -81,11 +88,70 @@
           <button class="icon-button" type="button" data-action="save-current" title="Save current window" aria-label="Save current window">${icons.archive}</button>
           <button class="icon-button" type="button" data-action="import" title="Import" aria-label="Import">${icons.import}</button>
           <button class="icon-button" type="button" data-action="export" title="Export" aria-label="Export" ${empty ? "disabled" : ""}>${icons.download}</button>
+          <button class="icon-button danger" type="button" data-action="reset-all" title="Reset all" aria-label="Reset all" ${empty ? "disabled" : ""}>${icons.trash}</button>
         </div>
 
-        ${empty ? renderEmptyState() : `<div class="workspace-list">${state.workspaces.map(renderWorkspaceCard).join("")}</div>`}
+        ${renderSearchBar(empty, filteredWorkspaces.length)}
+        <section id="workspaceResults">
+          ${renderWorkspaceResults(filteredWorkspaces)}
+        </section>
       </main>
     `;
+  }
+
+  function renderSearchBar(disabled, resultCount) {
+    const query = state.searchQuery.trim();
+    const summary = query ? `${resultCount} ${plural(resultCount, "match")}` : "All spaces";
+
+    return `
+      <div class="search-row">
+        <div class="search-box">
+          <span aria-hidden="true">${icons.search}</span>
+          <input id="workspaceSearch" type="search" value="${escapeAttr(state.searchQuery)}" data-field="workspaceSearch" placeholder="Search names" autocomplete="off" ${disabled ? "disabled" : ""}>
+          <button class="icon-button clear-search" type="button" data-action="clear-search" title="Clear search" aria-label="Clear search" ${query ? "" : "disabled"}>${icons.x}</button>
+        </div>
+        <span class="search-count">${summary}</span>
+      </div>
+    `;
+  }
+
+  function renderWorkspaceResults(workspaces) {
+    if (!state.workspaces.length) {
+      return renderEmptyState();
+    }
+
+    if (!workspaces.length) {
+      return renderNoMatches();
+    }
+
+    return `<div class="workspace-list">${workspaces.map(renderWorkspaceCard).join("")}</div>`;
+  }
+
+  function refreshWorkspaceResults() {
+    const results = document.getElementById("workspaceResults");
+    const count = app.querySelector(".search-count");
+    const clearButton = app.querySelector(".clear-search");
+    const filteredWorkspaces = getFilteredWorkspaces();
+    const query = state.searchQuery.trim();
+
+    if (results) {
+      results.innerHTML = renderWorkspaceResults(filteredWorkspaces);
+    }
+
+    if (count) {
+      count.textContent = query ? `${filteredWorkspaces.length} ${plural(filteredWorkspaces.length, "match")}` : "All spaces";
+    }
+
+    if (clearButton) {
+      clearButton.disabled = !query;
+    }
+  }
+
+  function getFilteredWorkspaces() {
+    const query = normalizeSearchText(state.searchQuery);
+    if (!query) return state.workspaces;
+
+    return state.workspaces.filter((workspace) => normalizeSearchText(workspace.name).includes(query));
   }
 
   function renderWorkspaceCard(workspace) {
@@ -104,6 +170,7 @@
         </div>
         <div class="workspace-actions">
           <button class="button primary" type="button" data-action="open-workspace" data-id="${workspace.id}" ${workspace.tabs.length ? "" : "disabled"}>${icons.launch}<span>Open</span></button>
+          <button class="icon-button" type="button" data-action="export-workspace" data-id="${workspace.id}" title="Export workspace" aria-label="Export workspace">${icons.download}</button>
           <button class="icon-button" type="button" data-action="edit-workspace" data-id="${workspace.id}" title="Edit" aria-label="Edit">${icons.edit}</button>
         </div>
       </article>
@@ -118,6 +185,57 @@
           <h2>No workspaces yet</h2>
           <p>Save your current window or create a workspace from scratch.</p>
         </div>
+      </section>
+    `;
+  }
+
+  function renderNoMatches() {
+    return `
+      <section class="empty-state compact">
+        <div>
+          ${icons.search}
+          <h2>No matching spaces</h2>
+          <p>Try another workspace name.</p>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderReset() {
+    const workspaceCount = state.workspaces.length;
+    const tabCount = state.workspaces.reduce((sum, workspace) => sum + workspace.tabs.length, 0);
+    const canReset = state.resetConfirmText.trim().toUpperCase() === "RESET";
+
+    return `
+      <section class="editor-shell">
+        <header class="editor-header">
+          <button class="icon-button" type="button" data-action="back" title="Back" aria-label="Back">${icons.arrowLeft}</button>
+          <div class="title-stack">
+            <h1 class="editor-title">Hard Reset</h1>
+            <div class="meta">${workspaceCount} ${plural(workspaceCount, "workspace")} - ${tabCount} ${plural(tabCount, "tab")}</div>
+          </div>
+          <button class="icon-button danger" type="button" data-action="confirm-reset" title="Delete all" aria-label="Delete all" ${canReset ? "" : "disabled"}>${icons.trash}</button>
+        </header>
+
+        <main class="content">
+          <div class="reset-panel">
+            <section class="danger-panel">
+              ${icons.trash}
+              <h2>Delete every workspace?</h2>
+              <p>This removes all saved tab spaces from this browser. Export first if you need a backup.</p>
+            </section>
+
+            <div class="field">
+              <label for="resetConfirm">Type RESET to confirm</label>
+              <input id="resetConfirm" type="text" value="${escapeAttr(state.resetConfirmText)}" data-field="resetConfirm" autocomplete="off">
+            </div>
+
+            <div class="reset-actions">
+              <button class="button secondary" type="button" data-action="back">${icons.arrowLeft}<span>Cancel</span></button>
+              <button class="button danger" type="button" data-action="confirm-reset" ${canReset ? "" : "disabled"}>${icons.trash}<span>Delete All</span></button>
+            </div>
+          </div>
+        </main>
       </section>
     `;
   }
@@ -175,6 +293,7 @@
 
             <div class="editor-actions">
               <button class="button secondary" type="button" data-action="open-editing" ${workspace.tabs.length ? "" : "disabled"}>${icons.launch}<span>Open</span></button>
+              <button class="button secondary" type="button" data-action="export-editing" ${workspace.name && workspace.tabs.length ? "" : "disabled"}>${icons.download}<span>Export</span></button>
               <button class="button danger" type="button" data-action="delete-workspace" ${isNew ? "disabled" : ""}>${icons.trash}<span>Delete</span></button>
             </div>
           </form>
@@ -232,25 +351,54 @@
 
   function renderImportPreview(preview) {
     const tabTotal = preview.workspaces.reduce((sum, workspace) => sum + workspace.tabs.length, 0);
+    const conflictCount = countImportConflicts(preview.workspaces);
 
     return `
       <section class="import-summary">
         <strong>${preview.workspaces.length} ${plural(preview.workspaces.length, "workspace")}</strong>
         <span>${tabTotal} ${plural(tabTotal, "tab")} found in ${escapeHtml(preview.filename)}</span>
       </section>
+      ${renderImportConflictControls(conflictCount)}
       <div class="import-list">
         ${preview.workspaces.map((workspace) => `
-          <div class="import-item">
+          <div class="import-item ${hasWorkspaceName(state.workspaces, workspace.name) ? "has-conflict" : ""}">
             <span>${escapeHtml(workspace.name)}</span>
-            <b class="pill">${workspace.tabs.length}</b>
+            <span class="import-badges">
+              ${hasWorkspaceName(state.workspaces, workspace.name) ? `<b class="pill warning">Name match</b>` : ""}
+              <b class="pill">${workspace.tabs.length}</b>
+            </span>
           </div>
         `).join("")}
       </div>
       <div class="import-actions">
-        <button class="button secondary" type="button" data-action="append-import">${icons.import}<span>Append</span></button>
-        <button class="button primary" type="button" data-action="replace-import">${icons.save}<span>Replace</span></button>
+        <button class="button primary" type="button" data-action="apply-import">${icons.import}<span>Import</span></button>
       </div>
       <button class="button ghost" type="button" data-action="choose-import-file">${icons.file}<span>Choose another file</span></button>
+    `;
+  }
+
+  function renderImportConflictControls(conflictCount) {
+    const options = [
+      { mode: "rename", label: "Versioned Copy", detail: "Work becomes Work2" },
+      { mode: "combine", label: "Combine", detail: "Add only new URLs" },
+      { mode: "overwrite", label: "Overwrite", detail: "Replace name matches" }
+    ];
+
+    return `
+      <section class="conflict-panel">
+        <div class="section-head">
+          <h2 class="section-title">Same-name workspaces</h2>
+          <span class="pill ${conflictCount ? "warning" : ""}">${conflictCount}</span>
+        </div>
+        <div class="segmented" role="group" aria-label="Import name conflict handling">
+          ${options.map((option) => `
+            <button class="segment ${state.importConflictMode === option.mode ? "active" : ""}" type="button" data-action="set-import-mode" data-mode="${option.mode}">
+              <span>${option.label}</span>
+              <small>${option.detail}</small>
+            </button>
+          `).join("")}
+        </div>
+      </section>
     `;
   }
 
@@ -274,6 +422,14 @@
       return;
     }
 
+    if (action === "clear-search") {
+      state.searchQuery = "";
+      refreshWorkspaceResults();
+      const input = document.getElementById("workspaceSearch");
+      if (input) input.focus();
+      return;
+    }
+
     if (action === "edit-workspace") {
       const workspace = state.workspaces.find((item) => item.id === id);
       state.editing = cloneWorkspace(workspace);
@@ -287,8 +443,18 @@
       return;
     }
 
+    if (action === "export-workspace") {
+      exportWorkspaceById(id);
+      return;
+    }
+
     if (action === "open-editing") {
       await openTabs(getEditingWorkspace().tabs);
+      return;
+    }
+
+    if (action === "export-editing") {
+      exportWorkspace(getEditingWorkspace());
       return;
     }
 
@@ -332,10 +498,23 @@
       return;
     }
 
+    if (action === "reset-all") {
+      state.view = "reset";
+      state.resetConfirmText = "";
+      render();
+      return;
+    }
+
+    if (action === "confirm-reset") {
+      await resetAllWorkspaces();
+      return;
+    }
+
     if (action === "back") {
       state.view = "list";
       state.editing = null;
       state.importPreview = null;
+      state.resetConfirmText = "";
       render();
       return;
     }
@@ -348,6 +527,7 @@
     if (action === "import") {
       state.view = "import";
       state.importPreview = null;
+      state.importConflictMode = "rename";
       render();
       importFile.value = "";
       importFile.click();
@@ -360,17 +540,33 @@
       return;
     }
 
-    if (action === "append-import") {
-      await applyImport("append");
+    if (action === "set-import-mode") {
+      state.importConflictMode = target.dataset.mode || "rename";
+      render();
       return;
     }
 
-    if (action === "replace-import") {
-      await applyImport("replace");
+    if (action === "apply-import") {
+      await applyImport();
     }
   }
 
   function onInput(event) {
+    if (event.target.dataset.field === "workspaceSearch") {
+      state.searchQuery = event.target.value;
+      refreshWorkspaceResults();
+      return;
+    }
+
+    if (event.target.dataset.field === "resetConfirm") {
+      state.resetConfirmText = event.target.value;
+      const canReset = state.resetConfirmText.trim().toUpperCase() === "RESET";
+      app.querySelectorAll('[data-action="confirm-reset"]').forEach((button) => {
+        button.disabled = !canReset;
+      });
+      return;
+    }
+
     const workspace = getEditingWorkspace();
     if (!workspace) return;
 
@@ -409,6 +605,7 @@
         filename: file.name,
         workspaces
       };
+      state.importConflictMode = "rename";
       state.view = "import";
       render();
     } catch (error) {
@@ -458,6 +655,11 @@
       return;
     }
 
+    if (!workspace.tabs.length) {
+      showToast("Add at least one valid tab URL.");
+      return;
+    }
+
     state.editing = workspace;
     const index = state.workspaces.findIndex((item) => item.id === workspace.id);
     if (index >= 0) {
@@ -482,6 +684,22 @@
       state.editing = null;
       showToast("Workspace deleted.");
     });
+  }
+
+  async function resetAllWorkspaces() {
+    if (state.resetConfirmText.trim().toUpperCase() !== "RESET") {
+      showToast("Type RESET first.");
+      return;
+    }
+
+    state.workspaces = [];
+    state.editing = null;
+    state.importPreview = null;
+    state.resetConfirmText = "";
+    state.searchQuery = "";
+    state.view = "list";
+    await persist();
+    showToast("All workspaces deleted.");
   }
 
   function moveTab(tabId, direction) {
@@ -524,36 +742,163 @@
   }
 
   function exportWorkspaces() {
-    if (!state.workspaces.length) return;
+    exportWorkspaceBundle(state.workspaces, "workspace-launcher", "Export downloaded.");
+  }
+
+  function exportWorkspaceById(id) {
+    const workspace = state.workspaces.find((item) => item.id === id);
+    exportWorkspace(workspace);
+  }
+
+  function exportWorkspace(workspace) {
+    const sanitized = sanitizeWorkspace(workspace);
+    if (!sanitized.name || !sanitized.tabs.length) {
+      showToast("Nothing to export.");
+      return;
+    }
+
+    exportWorkspaceBundle([sanitized], `workspace-${slugify(sanitized.name)}`, "Workspace exported.");
+  }
+
+  function exportWorkspaceBundle(workspaces, filenameBase, message) {
+    const sanitized = workspaces.map(sanitizeWorkspace).filter((workspace) => workspace.name);
+    if (!sanitized.length) return;
 
     const payload = {
       app: EXPORT_APP,
       version: 1,
       exportedAt: new Date().toISOString(),
-      workspaces: state.workspaces.map(sanitizeWorkspace)
+      workspaces: sanitized
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
 
     link.href = url;
-    link.download = `workspace-launcher-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `${filenameBase}-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showToast("Export downloaded.");
+    showToast(message);
   }
 
-  async function applyImport(mode) {
+  async function applyImport() {
     if (!state.importPreview) return;
 
     const imported = state.importPreview.workspaces.map(cloneWorkspace);
-    state.workspaces = mode === "replace" ? imported : [...imported, ...state.workspaces];
+    const result = resolveImportedWorkspaces(imported, state.importConflictMode);
+    state.workspaces = result.workspaces;
     await persist();
     state.importPreview = null;
     state.view = "list";
-    showToast(mode === "replace" ? "Workspaces replaced." : "Workspaces imported.");
+    showToast(`Imported ${result.imported} ${plural(result.imported, "workspace")}.`);
+  }
+
+  function resolveImportedWorkspaces(imported, mode) {
+    const existing = state.workspaces.map(cloneWorkspace);
+    const staged = [];
+
+    for (const workspace of imported) {
+      const incoming = copyImportedWorkspace(workspace);
+      const match = findWorkspaceMatch(existing, staged, incoming.name);
+
+      if (match && mode === "combine") {
+        match.list[match.index] = combineWorkspaces(match.list[match.index], incoming);
+        continue;
+      }
+
+      if (match && mode === "overwrite") {
+        incoming.id = match.list[match.index].id;
+        match.list[match.index] = incoming;
+        continue;
+      }
+
+      incoming.name = makeVersionedName(incoming.name, [...existing, ...staged]);
+      staged.push(incoming);
+    }
+
+    return {
+      imported: imported.length,
+      workspaces: [...staged, ...existing]
+    };
+  }
+
+  function findWorkspaceMatch(existing, staged, name) {
+    const existingIndex = findWorkspaceIndexByName(existing, name);
+    if (existingIndex >= 0) {
+      return { list: existing, index: existingIndex };
+    }
+
+    const stagedIndex = findWorkspaceIndexByName(staged, name);
+    if (stagedIndex >= 0) {
+      return { list: staged, index: stagedIndex };
+    }
+
+    return null;
+  }
+
+  function combineWorkspaces(target, incoming) {
+    const urls = new Set(target.tabs.map((tab) => normalizeUrl(tab.url)));
+    const tabs = [...target.tabs];
+
+    for (const tab of incoming.tabs) {
+      const normalizedUrl = normalizeUrl(tab.url);
+      if (!normalizedUrl || urls.has(normalizedUrl)) continue;
+      urls.add(normalizedUrl);
+      tabs.push({ ...tab, id: createId(), url: normalizedUrl });
+    }
+
+    return {
+      ...target,
+      tabs
+    };
+  }
+
+  function copyImportedWorkspace(workspace) {
+    return {
+      id: createId(),
+      name: workspace.name,
+      color: workspace.color,
+      tabs: workspace.tabs.map((tab) => ({
+        ...tab,
+        id: createId()
+      }))
+    };
+  }
+
+  function makeVersionedName(name, workspaces) {
+    const used = new Set(workspaces.map((workspace) => normalizeName(workspace.name)));
+    let candidate = name;
+    let version = 2;
+
+    while (used.has(normalizeName(candidate))) {
+      candidate = `${name}${version}`;
+      version += 1;
+    }
+
+    return candidate;
+  }
+
+  function countImportConflicts(workspaces) {
+    return workspaces.filter((workspace) => hasWorkspaceName(state.workspaces, workspace.name)).length;
+  }
+
+  function hasWorkspaceName(workspaces, name) {
+    return findWorkspaceIndexByName(workspaces, name) >= 0;
+  }
+
+  function findWorkspaceIndexByName(workspaces, name) {
+    const key = normalizeName(name);
+    return workspaces.findIndex((workspace) => normalizeName(workspace.name) === key);
+  }
+
+  function normalizeName(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "").trim().toLowerCase();
   }
 
   async function loadWorkspaces() {
@@ -726,6 +1071,15 @@
 
   function cleanTitle(value) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  }
+
+  function slugify(value) {
+    const slug = String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return slug || "workspace";
   }
 
   function sanitizeColor(value) {
