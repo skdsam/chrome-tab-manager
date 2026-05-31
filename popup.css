@@ -227,6 +227,34 @@ button {
   margin-bottom: 12px;
 }
 
+.linked-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  border: 1px solid #cfe4df;
+  border-radius: var(--radius);
+  background: #f0faf7;
+}
+
+.linked-workspace-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #24564d;
+  font-weight: 750;
+}
+
+.linked-workspace-name span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .search-box {
   display: grid;
   grid-template-columns: 18px 1fr 28px;
@@ -797,6 +825,84 @@ button {
   color: #ffffff;
   box-shadow: var(--shadow);
   font-weight: 650;
+}
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(18, 28, 25, 0.34);
+}
+
+.confirm-panel {
+  display: grid;
+  width: 100%;
+  max-width: 368px;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(22, 33, 31, 0.08);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.confirm-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.confirm-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.diff-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.diff-item {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+}
+
+.diff-item strong {
+  color: var(--ink);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.diff-item span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.diff-item.added {
+  border-color: #bfe5d7;
+  background: #f0faf7;
+}
+
+.diff-item.removed {
+  border-color: #ffd4ce;
+  background: #fff1ef;
+}
+
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .import-panel {

@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "workspaceLauncher.workspaces.v1";
+  const WINDOW_LINKS_KEY = "workspaceLauncher.windowLinks.v1";
   const EXPORT_APP = "one-tab-workspace-launcher";
   const COLORS = ["#0f8f7a", "#2f6fed", "#d9812b", "#b84a3f", "#6d5bd0", "#1d6b86", "#667085", "#2b8a3e"];
   const WORKSPACE_ICONS = [
@@ -46,8 +47,11 @@
   let state = {
     view: "list",
     workspaces: [],
+    windowLinks: {},
+    currentWindowId: null,
     editing: null,
     importPreview: null,
+    pendingUpdate: null,
     importConflictMode: "rename",
     draggingWorkspaceId: "",
     resetConfirmText: "",
@@ -66,7 +70,15 @@
   importFile.addEventListener("change", onImportFile);
 
   async function init() {
-    state.workspaces = await loadWorkspaces();
+    const [workspaces, windowLinks, currentWindowId] = await Promise.all([
+      loadWorkspaces(),
+      loadWindowLinks(),
+      getCurrentWindowId()
+    ]);
+
+    state.workspaces = workspaces;
+    state.windowLinks = windowLinks;
+    state.currentWindowId = currentWindowId;
     render();
   }
 
@@ -84,12 +96,17 @@
     if (state.toast) {
       app.insertAdjacentHTML("beforeend", `<div class="toast" role="status">${escapeHtml(state.toast)}</div>`);
     }
+
+    if (state.pendingUpdate) {
+      app.insertAdjacentHTML("beforeend", renderUpdateConfirmation(state.pendingUpdate));
+    }
   }
 
   function renderList() {
     const totalTabs = state.workspaces.reduce((sum, workspace) => sum + workspace.tabs.length, 0);
     const empty = state.workspaces.length === 0;
     const filteredWorkspaces = getFilteredWorkspaces();
+    const linkedWorkspace = getLinkedWorkspace();
 
     return `
       <header class="topbar">
@@ -113,11 +130,59 @@
           <button class="icon-button danger" type="button" data-action="reset-all" title="Reset all" aria-label="Reset all" ${empty ? "disabled" : ""}>${icons.trash}</button>
         </div>
 
+        ${renderLinkedWorkspaceBar(linkedWorkspace)}
         ${renderSearchBar(empty, filteredWorkspaces.length)}
         <section id="workspaceResults">
           ${renderWorkspaceResults(filteredWorkspaces)}
         </section>
       </main>
+    `;
+  }
+
+  function renderLinkedWorkspaceBar(workspace) {
+    if (!workspace) return "";
+
+    return `
+      <div class="linked-workspace">
+        <div class="linked-workspace-name">
+          <span class="workspace-emoji" aria-hidden="true">${escapeHtml(sanitizeIcon(workspace.icon))}</span>
+          <span>${escapeHtml(workspace.name)}</span>
+        </div>
+        <button class="button secondary" type="button" data-action="update-linked-workspace">${icons.save}<span>Update</span></button>
+      </div>
+    `;
+  }
+
+  function renderUpdateConfirmation(update) {
+    return `
+      <div class="confirm-backdrop" role="presentation">
+        <section class="confirm-panel" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+          <div class="confirm-head">
+            <h2 id="confirmTitle">Update ${escapeHtml(update.workspaceName)}?</h2>
+            <p>This replaces the saved tabs with the tabs currently open in this window.</p>
+          </div>
+
+          <div class="diff-grid" aria-label="Workspace tab changes">
+            <div class="diff-item added">
+              <strong>${update.diff.added}</strong>
+              <span>Added</span>
+            </div>
+            <div class="diff-item removed">
+              <strong>${update.diff.removed}</strong>
+              <span>Removed</span>
+            </div>
+            <div class="diff-item kept">
+              <strong>${update.diff.kept}</strong>
+              <span>Unchanged</span>
+            </div>
+          </div>
+
+          <div class="confirm-actions">
+            <button class="button secondary" type="button" data-action="cancel-workspace-update">${icons.x}<span>No</span></button>
+            <button class="button primary" type="button" data-action="confirm-workspace-update">${icons.save}<span>Yes, Update</span></button>
+          </div>
+        </section>
+      </div>
     `;
   }
 
@@ -397,6 +462,7 @@
               <div class="section-head">
                 <h2 class="section-title">Tabs</h2>
                 <div class="icon-row">
+                  <button class="icon-button" type="button" data-action="replace-current-tabs" title="Replace with current window" aria-label="Replace with current window">${icons.save}</button>
                   <button class="icon-button" type="button" data-action="add-current-tabs" title="Add current tabs" aria-label="Add current tabs">${icons.archive}</button>
                   <button class="icon-button" type="button" data-action="add-tab" title="Add tab" aria-label="Add tab">${icons.add}</button>
                 </div>
@@ -547,6 +613,22 @@
       return;
     }
 
+    if (action === "update-linked-workspace") {
+      await prepareLinkedWorkspaceUpdate();
+      return;
+    }
+
+    if (action === "cancel-workspace-update") {
+      state.pendingUpdate = null;
+      render();
+      return;
+    }
+
+    if (action === "confirm-workspace-update") {
+      await confirmPendingWorkspaceUpdate();
+      return;
+    }
+
     if (action === "edit-workspace") {
       const workspace = state.workspaces.find((item) => item.id === id);
       state.editing = cloneWorkspace(workspace);
@@ -576,12 +658,17 @@
     }
 
     if (action === "open-editing") {
-      await openTabs(getEditingWorkspace().tabs);
+      const workspace = getEditingWorkspace();
+      await linkCurrentWindowToWorkspace(workspace.id);
+      const opened = await openTabs(workspace.tabs);
+      if (opened) await linkCurrentWindowToWorkspace(workspace.id);
       return;
     }
 
     if (action === "open-editing-window") {
-      await openTabsInWindow(getEditingWorkspace().tabs);
+      const workspace = getEditingWorkspace();
+      const windowId = await openTabsInWindow(workspace.tabs);
+      if (windowId) await linkWindowToWorkspace(windowId, workspace.id);
       return;
     }
 
@@ -630,6 +717,11 @@
 
     if (action === "add-current-tabs") {
       await addCurrentTabsToEditor();
+      return;
+    }
+
+    if (action === "replace-current-tabs") {
+      await prepareEditingTabsReplace();
       return;
     }
 
@@ -829,6 +921,7 @@
 
     state.workspaces.unshift(workspace);
     await persist();
+    await linkCurrentWindowToWorkspace(workspace.id);
     state.editing = cloneWorkspace(workspace);
     state.view = "edit";
     showToast("Window saved.");
@@ -847,6 +940,19 @@
 
     workspace.tabs.push(...uniqueTabs);
     showToast(`${uniqueTabs.length} ${plural(uniqueTabs.length, "tab")} added.`);
+  }
+
+  async function prepareEditingTabsReplace() {
+    const workspace = getEditingWorkspace();
+    const tabs = await getCurrentTabs();
+
+    if (!tabs.length) {
+      showToast("No launchable tabs found.");
+      return;
+    }
+
+    state.pendingUpdate = createWorkspaceUpdatePreview(workspace, tabs, "editor");
+    render();
   }
 
   async function saveEditingWorkspace() {
@@ -888,6 +994,7 @@
     if (!workspace) return;
 
     state.workspaces = state.workspaces.filter((item) => item.id !== workspace.id);
+    removeWorkspaceWindowLinks(workspace.id);
     persist().then(() => {
       state.view = "list";
       state.editing = null;
@@ -903,6 +1010,90 @@
     workspace.updatedAt = new Date().toISOString();
     await persist();
     showToast(workspace.favorite ? "Added to favorites." : "Removed from favorites.");
+  }
+
+  async function prepareLinkedWorkspaceUpdate() {
+    const workspace = getLinkedWorkspace();
+    if (!workspace) {
+      showToast("No linked workspace for this window.");
+      return;
+    }
+
+    const tabs = await getCurrentTabs();
+    if (!tabs.length) {
+      showToast("No launchable tabs found.");
+      return;
+    }
+
+    state.pendingUpdate = createWorkspaceUpdatePreview(workspace, tabs, "linked");
+    render();
+  }
+
+  async function confirmPendingWorkspaceUpdate() {
+    const update = state.pendingUpdate;
+    if (!update) return;
+
+    if (update.source === "editor") {
+      const workspace = getEditingWorkspace();
+      if (!workspace || workspace.id !== update.workspaceId) {
+        state.pendingUpdate = null;
+        showToast("Workspace editor changed.");
+        return;
+      }
+
+      workspace.tabs = update.tabs.map((tab) => ({ ...tab }));
+      state.pendingUpdate = null;
+      render();
+      showToast("Tabs replaced from current window.");
+      return;
+    }
+
+    const workspace = state.workspaces.find((item) => item.id === update.workspaceId);
+    if (!workspace) {
+      state.pendingUpdate = null;
+      render();
+      return;
+    }
+
+    workspace.tabs = update.tabs.map((tab) => ({ ...tab }));
+    workspace.updatedAt = new Date().toISOString();
+    state.pendingUpdate = null;
+    await persist();
+    showToast(`${workspace.name} updated from current window.`);
+  }
+
+  function createWorkspaceUpdatePreview(workspace, tabs, source) {
+    return {
+      source,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name || "Untitled Workspace",
+      tabs: tabs.map((tab) => ({ ...tab })),
+      diff: getTabDiff(workspace.tabs, tabs)
+    };
+  }
+
+  function getTabDiff(savedTabs, currentTabs) {
+    const savedUrls = new Set(savedTabs.map((tab) => normalizeUrl(tab.url)).filter(Boolean));
+    const currentUrls = new Set(currentTabs.map((tab) => normalizeUrl(tab.url)).filter(Boolean));
+    let added = 0;
+    let removed = 0;
+    let kept = 0;
+
+    currentUrls.forEach((url) => {
+      if (savedUrls.has(url)) {
+        kept += 1;
+      } else {
+        added += 1;
+      }
+    });
+
+    savedUrls.forEach((url) => {
+      if (!currentUrls.has(url)) {
+        removed += 1;
+      }
+    });
+
+    return { added, removed, kept };
   }
 
   async function reorderWorkspace(draggedId, targetId, favoriteGroup, insertAfter) {
@@ -939,11 +1130,13 @@
     }
 
     state.workspaces = [];
+    state.windowLinks = {};
     state.editing = null;
     state.importPreview = null;
     state.resetConfirmText = "";
     state.searchQuery = "";
     state.view = "list";
+    await saveWindowLinks();
     await persist();
     showToast("All workspaces deleted.");
   }
@@ -962,11 +1155,16 @@
     const workspace = state.workspaces.find((item) => item.id === id);
     if (!workspace) return;
     if (mode === "window") {
-      await openTabsInWindow(workspace.tabs);
+      const windowId = await openTabsInWindow(workspace.tabs);
+      if (windowId) await linkWindowToWorkspace(windowId, workspace.id);
       return;
     }
 
-    await openTabs(workspace.tabs);
+    await linkCurrentWindowToWorkspace(workspace.id);
+    const opened = await openTabs(workspace.tabs);
+    if (opened) {
+      await linkCurrentWindowToWorkspace(workspace.id);
+    }
   }
 
   async function openTabs(tabs) {
@@ -990,6 +1188,8 @@
     if (firstTabId) {
       await activateChromeTab(firstTabId);
     }
+
+    return opened;
   }
 
   async function openTabsInWindow(tabs) {
@@ -999,8 +1199,9 @@
       return;
     }
 
-    const created = await createChromeWindow(urls);
-    showToast(created ? `${urls.length} ${plural(urls.length, "tab")} opened in a new window.` : "Could not open a new window.");
+    const windowId = await createChromeWindow(urls);
+    showToast(windowId ? `${urls.length} ${plural(urls.length, "tab")} opened in a new window.` : "Could not open a new window.");
+    return windowId;
   }
 
   function getLaunchableUrls(tabs) {
@@ -1180,9 +1381,59 @@
     return saved.map(sanitizeWorkspace).filter((workspace) => workspace.name);
   }
 
+  async function loadWindowLinks() {
+    const data = await chromeStorageGet(WINDOW_LINKS_KEY);
+    const links = data[WINDOW_LINKS_KEY];
+    return links && typeof links === "object" && !Array.isArray(links) ? links : {};
+  }
+
   async function persist() {
     await chromeStorageSet({ [STORAGE_KEY]: state.workspaces.map(sanitizeWorkspace) });
     render();
+  }
+
+  async function saveWindowLinks() {
+    await chromeStorageSet({ [WINDOW_LINKS_KEY]: state.windowLinks });
+  }
+
+  function getCurrentWindowId() {
+    return new Promise((resolve) => {
+      chrome.windows.getCurrent({ populate: false }, (window) => {
+        resolve(chrome.runtime.lastError ? null : window?.id || null);
+      });
+    });
+  }
+
+  function getLinkedWorkspace() {
+    if (state.currentWindowId === null || state.currentWindowId === undefined) return null;
+
+    const workspaceId = state.windowLinks[String(state.currentWindowId)];
+    if (!workspaceId) return null;
+    return state.workspaces.find((workspace) => workspace.id === workspaceId) || null;
+  }
+
+  async function linkCurrentWindowToWorkspace(workspaceId) {
+    const windowId = state.currentWindowId ?? await getCurrentWindowId();
+    if (!windowId) return;
+
+    state.currentWindowId = windowId;
+    await linkWindowToWorkspace(windowId, workspaceId);
+  }
+
+  async function linkWindowToWorkspace(windowId, workspaceId) {
+    if (!windowId || !workspaceId) return;
+
+    state.windowLinks[String(windowId)] = workspaceId;
+    await saveWindowLinks();
+  }
+
+  function removeWorkspaceWindowLinks(workspaceId) {
+    Object.keys(state.windowLinks).forEach((windowId) => {
+      if (state.windowLinks[windowId] === workspaceId) {
+        delete state.windowLinks[windowId];
+      }
+    });
+    saveWindowLinks();
   }
 
   function chromeStorageGet(key) {
@@ -1230,8 +1481,8 @@
 
   function createChromeWindow(urls) {
     return new Promise((resolve) => {
-      chrome.windows.create({ url: urls, focused: true }, () => {
-        resolve(!chrome.runtime.lastError);
+      chrome.windows.create({ url: urls, focused: true }, (window) => {
+        resolve(chrome.runtime.lastError ? null : window?.id || null);
       });
     });
   }
