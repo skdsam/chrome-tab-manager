@@ -52,6 +52,7 @@
     editing: null,
     importPreview: null,
     pendingUpdate: null,
+    pendingExport: null,
     importConflictMode: "rename",
     draggingWorkspaceId: "",
     resetConfirmText: "",
@@ -99,6 +100,15 @@
 
     if (state.pendingUpdate) {
       app.insertAdjacentHTML("beforeend", renderUpdateConfirmation(state.pendingUpdate));
+    }
+
+    if (state.pendingExport) {
+      app.insertAdjacentHTML("beforeend", renderExportDialog(state.pendingExport));
+      const input = document.getElementById("exportFilename");
+      if (input) {
+        input.focus();
+        input.select();
+      }
     }
   }
 
@@ -180,6 +190,34 @@
           <div class="confirm-actions">
             <button class="button secondary" type="button" data-action="cancel-workspace-update">${icons.x}<span>No</span></button>
             <button class="button primary" type="button" data-action="confirm-workspace-update">${icons.save}<span>Yes, Update</span></button>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderExportDialog(exportState) {
+    const canExport = Boolean(exportState.filename.trim());
+
+    return `
+      <div class="confirm-backdrop" role="presentation">
+        <section class="confirm-panel" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+          <div class="confirm-head">
+            <h2 id="exportTitle">Name export file</h2>
+            <p>${exportState.workspaces.length} ${plural(exportState.workspaces.length, "workspace")} will be exported as JSON.</p>
+          </div>
+
+          <div class="field export-field">
+            <label for="exportFilename">Filename</label>
+            <div class="filename-input">
+              <input id="exportFilename" type="text" value="${escapeAttr(exportState.filename)}" data-field="exportFilename" autocomplete="off">
+              <span>.json</span>
+            </div>
+          </div>
+
+          <div class="confirm-actions">
+            <button class="button secondary" type="button" data-action="cancel-export">${icons.x}<span>Cancel</span></button>
+            <button class="button primary" type="button" data-action="confirm-export" ${canExport ? "" : "disabled"}>${icons.download}<span>Export</span></button>
           </div>
         </section>
       </div>
@@ -629,6 +667,17 @@
       return;
     }
 
+    if (action === "cancel-export") {
+      state.pendingExport = null;
+      render();
+      return;
+    }
+
+    if (action === "confirm-export") {
+      confirmPendingExport();
+      return;
+    }
+
     if (action === "edit-workspace") {
       const workspace = state.workspaces.find((item) => item.id === id);
       state.editing = cloneWorkspace(workspace);
@@ -789,6 +838,15 @@
   }
 
   function onInput(event) {
+    if (event.target.dataset.field === "exportFilename") {
+      if (!state.pendingExport) return;
+
+      state.pendingExport.filename = event.target.value;
+      const button = app.querySelector('[data-action="confirm-export"]');
+      if (button) button.disabled = !state.pendingExport.filename.trim();
+      return;
+    }
+
     if (event.target.dataset.field === "workspaceSearch") {
       state.searchQuery = event.target.value;
       refreshWorkspaceResults();
@@ -1209,7 +1267,7 @@
   }
 
   function exportWorkspaces() {
-    exportWorkspaceBundle(state.workspaces, "workspace-launcher", "Export downloaded.");
+    prepareExport(state.workspaces, "workspace-launcher", "Export downloaded.");
   }
 
   function exportWorkspaceById(id) {
@@ -1224,18 +1282,45 @@
       return;
     }
 
-    exportWorkspaceBundle([sanitized], `workspace-${slugify(sanitized.name)}`, "Workspace exported.");
+    prepareExport([sanitized], `workspace-${slugify(sanitized.name)}`, "Workspace exported.");
+  }
+
+  function prepareExport(workspaces, filenameBase, message) {
+    const sanitized = workspaces.map(sanitizeWorkspace).filter((workspace) => workspace.name);
+    if (!sanitized.length) {
+      showToast("Nothing to export.");
+      return;
+    }
+
+    state.pendingExport = {
+      workspaces: sanitized,
+      filename: `${filenameBase}-${new Date().toISOString().slice(0, 10)}`,
+      message
+    };
+    render();
+  }
+
+  function confirmPendingExport() {
+    if (!state.pendingExport) return;
+
+    const exportState = state.pendingExport;
+    const filename = slugify(exportState.filename);
+    if (!filename) {
+      showToast("Add an export filename.");
+      return;
+    }
+
+    exportWorkspaceBundle(exportState.workspaces, filename, exportState.message);
+    state.pendingExport = null;
+    render();
   }
 
   function exportWorkspaceBundle(workspaces, filenameBase, message) {
-    const sanitized = workspaces.map(sanitizeWorkspace).filter((workspace) => workspace.name);
-    if (!sanitized.length) return;
-
     const payload = {
       app: EXPORT_APP,
       version: 1,
       exportedAt: new Date().toISOString(),
-      workspaces: sanitized
+      workspaces
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);

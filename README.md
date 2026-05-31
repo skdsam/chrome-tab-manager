@@ -18,7 +18,7 @@ A clean Chrome extension for saving groups of tabs as reusable workspaces. Save 
 - Add, remove, and reorder stored tabs.
 - Require at least one valid tab URL before saving a workspace.
 - Export all workspaces to JSON.
-- Export a single workspace from the list or editor.
+- Export all workspaces or a single workspace with a custom JSON filename.
 - Import workspace JSON without accidentally overwriting saved data.
 - Choose how same-name imports are handled: versioned copy, combine, or overwrite.
 - Hard reset all saved workspaces with a confirmation warning.

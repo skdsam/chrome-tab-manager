@@ -905,6 +905,38 @@ button {
   gap: 8px;
 }
 
+.export-field {
+  gap: 7px;
+}
+
+.filename-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.filename-input:focus-within {
+  outline: 2px solid rgba(15, 143, 122, 0.35);
+  outline-offset: 2px;
+}
+
+.filename-input input {
+  height: 36px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+}
+
+.filename-input span {
+  padding: 0 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .import-panel {
   display: grid;
   gap: 12px;
