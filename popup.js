@@ -36,6 +36,7 @@
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg>',
     star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5-4.7-4.6 6.5-.9Z"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/></svg>',
+    window: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4"/></svg>',
     x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>'
   };
 
@@ -219,6 +220,7 @@
             <div class="workspace-actions">
               <button class="icon-button favorite-button ${workspace.favorite ? "active" : ""}" type="button" data-action="toggle-favorite" data-id="${workspace.id}" title="${workspace.favorite ? "Remove from favorites" : "Add to favorites"}" aria-label="${workspace.favorite ? "Remove from favorites" : "Add to favorites"}" aria-pressed="${workspace.favorite ? "true" : "false"}">${icons.star}</button>
               <button class="button primary" type="button" data-action="open-workspace" data-id="${workspace.id}" ${workspace.tabs.length ? "" : "disabled"}>${icons.launch}<span>Open</span></button>
+              <button class="icon-button" type="button" data-action="open-workspace-window" data-id="${workspace.id}" title="Open in new window" aria-label="Open in new window" ${workspace.tabs.length ? "" : "disabled"}>${icons.window}</button>
               <button class="icon-button" type="button" data-action="export-workspace" data-id="${workspace.id}" title="Export workspace" aria-label="Export workspace">${icons.download}</button>
               <button class="icon-button" type="button" data-action="edit-workspace" data-id="${workspace.id}" title="Edit" aria-label="Edit">${icons.edit}</button>
             </div>
@@ -404,6 +406,7 @@
 
             <div class="editor-actions">
               <button class="button secondary" type="button" data-action="open-editing" ${workspace.tabs.length ? "" : "disabled"}>${icons.launch}<span>Open</span></button>
+              <button class="button secondary" type="button" data-action="open-editing-window" ${workspace.tabs.length ? "" : "disabled"}>${icons.window}<span>Window</span></button>
               <button class="button secondary" type="button" data-action="export-editing" ${workspace.name && workspace.tabs.length ? "" : "disabled"}>${icons.download}<span>Export</span></button>
               <button class="button danger" type="button" data-action="delete-workspace" ${isNew ? "disabled" : ""}>${icons.trash}<span>Delete</span></button>
             </div>
@@ -562,6 +565,11 @@
       return;
     }
 
+    if (action === "open-workspace-window") {
+      await openWorkspace(id, "window");
+      return;
+    }
+
     if (action === "export-workspace") {
       exportWorkspaceById(id);
       return;
@@ -569,6 +577,11 @@
 
     if (action === "open-editing") {
       await openTabs(getEditingWorkspace().tabs);
+      return;
+    }
+
+    if (action === "open-editing-window") {
+      await openTabsInWindow(getEditingWorkspace().tabs);
       return;
     }
 
@@ -945,14 +958,19 @@
     workspace.tabs.splice(next, 0, tab);
   }
 
-  async function openWorkspace(id) {
+  async function openWorkspace(id, mode = "current") {
     const workspace = state.workspaces.find((item) => item.id === id);
     if (!workspace) return;
+    if (mode === "window") {
+      await openTabsInWindow(workspace.tabs);
+      return;
+    }
+
     await openTabs(workspace.tabs);
   }
 
   async function openTabs(tabs) {
-    const urls = tabs.map((tab) => normalizeUrl(tab.url)).filter(Boolean);
+    const urls = getLaunchableUrls(tabs);
     if (!urls.length) {
       showToast("No valid URLs to open.");
       return;
@@ -972,6 +990,21 @@
     if (firstTabId) {
       await activateChromeTab(firstTabId);
     }
+  }
+
+  async function openTabsInWindow(tabs) {
+    const urls = getLaunchableUrls(tabs);
+    if (!urls.length) {
+      showToast("No valid URLs to open.");
+      return;
+    }
+
+    const created = await createChromeWindow(urls);
+    showToast(created ? `${urls.length} ${plural(urls.length, "tab")} opened in a new window.` : "Could not open a new window.");
+  }
+
+  function getLaunchableUrls(tabs) {
+    return tabs.map((tab) => normalizeUrl(tab.url)).filter(Boolean);
   }
 
   function exportWorkspaces() {
@@ -1190,6 +1223,14 @@
   function activateChromeTab(tabId) {
     return new Promise((resolve) => {
       chrome.tabs.update(tabId, { active: true }, () => {
+        resolve(!chrome.runtime.lastError);
+      });
+    });
+  }
+
+  function createChromeWindow(urls) {
+    return new Promise((resolve) => {
+      chrome.windows.create({ url: urls, focused: true }, () => {
         resolve(!chrome.runtime.lastError);
       });
     });

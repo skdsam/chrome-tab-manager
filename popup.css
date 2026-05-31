@@ -489,7 +489,7 @@ button {
 
 .workspace-actions {
   display: grid;
-  grid-template-columns: 34px 1fr 34px 34px;
+  grid-template-columns: 34px 1fr 34px 34px 34px;
   gap: 8px;
   align-content: center;
 }
@@ -765,7 +765,7 @@ button {
 }
 
 .editor-actions {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .import-actions {

@@ -6,7 +6,8 @@
   "permissions": [
     "favicon",
     "storage",
-    "tabs"
+    "tabs",
+    "windows"
   ],
   "action": {
     "default_title": "Workspace Launcher",
