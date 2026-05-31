@@ -8,7 +8,10 @@ A clean Chrome extension for saving groups of tabs as reusable workspaces. Save 
 - Save the current Chrome window as a workspace.
 - Launch all tabs in a workspace with one click.
 - Search saved workspaces by name.
+- Mark workspaces as favorites and view them in a separate Favorites section.
+- Drag and drop workspaces to choose their display order.
 - Edit each workspace name, preset icon, color, and stored tabs.
+- Track each workspace created and last updated dates, displayed as a date-only label.
 - Show saved tab favicons under each workspace and beside each tab in the editor.
 - Add, remove, and reorder stored tabs.
 - Require at least one valid tab URL before saving a workspace.

@@ -34,6 +34,7 @@
     launch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M13 5l7 7-7 7"/></svg>',
     save: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>',
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg>',
+    star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5-4.7-4.6 6.5-.9Z"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/></svg>',
     x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>'
   };
@@ -47,6 +48,7 @@
     editing: null,
     importPreview: null,
     importConflictMode: "rename",
+    draggingWorkspaceId: "",
     resetConfirmText: "",
     searchQuery: "",
     toast: ""
@@ -55,6 +57,10 @@
   document.addEventListener("DOMContentLoaded", init);
   app.addEventListener("click", onClick);
   app.addEventListener("input", onInput);
+  app.addEventListener("dragstart", onDragStart);
+  app.addEventListener("dragover", onDragOver);
+  app.addEventListener("drop", onDrop);
+  app.addEventListener("dragend", onDragEnd);
   app.addEventListener("error", onImageError, true);
   importFile.addEventListener("change", onImportFile);
 
@@ -139,7 +145,29 @@
       return renderNoMatches();
     }
 
-    return `<div class="workspace-list">${workspaces.map(renderWorkspaceCard).join("")}</div>`;
+    const favoriteWorkspaces = workspaces.filter((workspace) => workspace.favorite);
+    const otherWorkspaces = workspaces.filter((workspace) => !workspace.favorite);
+
+    return `
+      <div class="workspace-groups">
+        ${renderWorkspaceGroup("Favorites", favoriteWorkspaces, "Star a workspace to keep it here.", true)}
+        ${renderWorkspaceGroup("All Others", otherWorkspaces, "No other workspaces.", false)}
+      </div>
+    `;
+  }
+
+  function renderWorkspaceGroup(title, workspaces, emptyText, favoriteGroup) {
+    return `
+      <section class="workspace-group">
+        <div class="workspace-group-head">
+          <h2>${escapeHtml(title)}</h2>
+          <span class="group-count">${workspaces.length}</span>
+        </div>
+        <div class="workspace-list" data-favorite-group="${favoriteGroup ? "true" : "false"}">
+          ${workspaces.length ? workspaces.map(renderWorkspaceCard).join("") : `<div class="group-empty">${escapeHtml(emptyText)}</div>`}
+        </div>
+      </section>
+    `;
   }
 
   function refreshWorkspaceResults() {
@@ -173,20 +201,28 @@
     const color = sanitizeColor(workspace.color);
 
     return `
-      <article class="workspace-card" style="--workspace-color: ${color}">
+      <article class="workspace-card" style="--workspace-color: ${color}" draggable="true" data-workspace-id="${workspace.id}" data-favorite="${workspace.favorite ? "true" : "false"}" title="Drag to reorder">
         <div class="workspace-accent" aria-hidden="true"></div>
-        <div class="workspace-main">
-          <h2 class="workspace-name">
-            <span class="workspace-emoji" aria-hidden="true">${escapeHtml(sanitizeIcon(workspace.icon))}</span>
-            <span class="workspace-label">${escapeHtml(workspace.name)}</span>
-            <b class="pill">${workspace.tabs.length}</b>
-          </h2>
-          ${renderFaviconStrip(workspace.tabs)}
-        </div>
-        <div class="workspace-actions">
-          <button class="button primary" type="button" data-action="open-workspace" data-id="${workspace.id}" ${workspace.tabs.length ? "" : "disabled"}>${icons.launch}<span>Open</span></button>
-          <button class="icon-button" type="button" data-action="export-workspace" data-id="${workspace.id}" title="Export workspace" aria-label="Export workspace">${icons.download}</button>
-          <button class="icon-button" type="button" data-action="edit-workspace" data-id="${workspace.id}" title="Edit" aria-label="Edit">${icons.edit}</button>
+        <div class="workspace-card-body">
+          <div class="workspace-main">
+            <h2 class="workspace-name">
+              <span class="workspace-emoji" aria-hidden="true">${escapeHtml(sanitizeIcon(workspace.icon))}</span>
+              <span class="workspace-label">${escapeHtml(workspace.name)}</span>
+              <b class="pill">${workspace.tabs.length}</b>
+            </h2>
+          </div>
+          <div class="workspace-card-bottom">
+            <div class="workspace-meta">
+              ${renderFaviconStrip(workspace.tabs)}
+              ${renderWorkspaceDate(workspace)}
+            </div>
+            <div class="workspace-actions">
+              <button class="icon-button favorite-button ${workspace.favorite ? "active" : ""}" type="button" data-action="toggle-favorite" data-id="${workspace.id}" title="${workspace.favorite ? "Remove from favorites" : "Add to favorites"}" aria-label="${workspace.favorite ? "Remove from favorites" : "Add to favorites"}" aria-pressed="${workspace.favorite ? "true" : "false"}">${icons.star}</button>
+              <button class="button primary" type="button" data-action="open-workspace" data-id="${workspace.id}" ${workspace.tabs.length ? "" : "disabled"}>${icons.launch}<span>Open</span></button>
+              <button class="icon-button" type="button" data-action="export-workspace" data-id="${workspace.id}" title="Export workspace" aria-label="Export workspace">${icons.download}</button>
+              <button class="icon-button" type="button" data-action="edit-workspace" data-id="${workspace.id}" title="Edit" aria-label="Edit">${icons.edit}</button>
+            </div>
+          </div>
         </div>
       </article>
     `;
@@ -219,6 +255,25 @@
     }
 
     return `<span class="favicon-shell"><img class="favicon-img" src="${escapeAttr(src)}" alt="" loading="lazy"></span>`;
+  }
+
+  function renderWorkspaceDate(workspace) {
+    const formatDate = (value) => {
+      const date = new Date(value || "");
+      if (Number.isNaN(date.getTime())) return "";
+
+      return new Intl.DateTimeFormat(undefined, {
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+      }).format(date);
+    };
+    const created = formatDate(workspace.createdAt);
+    const updated = formatDate(workspace.updatedAt);
+    const label = created && updated && created !== updated ? "Updated" : "Created";
+    const date = label === "Updated" ? updated : created || updated;
+
+    return date ? `<div class="workspace-date">${label} ${escapeHtml(date)}</div>` : "";
   }
 
   function renderEmptyState() {
@@ -303,7 +358,10 @@
             <h1 class="editor-title">${escapeHtml(workspace.name || "Untitled Workspace")}</h1>
             <div class="meta">${tabCount} ${plural(tabCount, "tab")} stored</div>
           </div>
-          <button class="button primary" type="button" data-action="save-editor">${icons.save}<span>Save</span></button>
+          <div class="editor-header-actions">
+            <button class="icon-button favorite-button ${workspace.favorite ? "active" : ""}" type="button" data-action="toggle-editing-favorite" title="${workspace.favorite ? "Remove from favorites" : "Add to favorites"}" aria-label="${workspace.favorite ? "Remove from favorites" : "Add to favorites"}" aria-pressed="${workspace.favorite ? "true" : "false"}">${icons.star}</button>
+            <button class="button primary" type="button" data-action="save-editor">${icons.save}<span>Save</span></button>
+          </div>
         </header>
 
         <main class="content">
@@ -494,6 +552,11 @@
       return;
     }
 
+    if (action === "toggle-favorite") {
+      await toggleWorkspaceFavorite(id);
+      return;
+    }
+
     if (action === "open-workspace") {
       await openWorkspace(id);
       return;
@@ -522,6 +585,13 @@
 
     if (action === "set-icon") {
       getEditingWorkspace().icon = sanitizeIcon(target.dataset.icon);
+      render();
+      return;
+    }
+
+    if (action === "toggle-editing-favorite") {
+      const workspace = getEditingWorkspace();
+      workspace.favorite = !workspace.favorite;
       render();
       return;
     }
@@ -659,6 +729,53 @@
     event.target.closest(".favicon-shell")?.classList.add("missing");
   }
 
+  function onDragStart(event) {
+    const card = event.target.closest(".workspace-card");
+    if (!card || event.target.closest("button, input, textarea, select, a")) {
+      event.preventDefault();
+      return;
+    }
+
+    state.draggingWorkspaceId = card.dataset.workspaceId || "";
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", state.draggingWorkspaceId);
+    card.classList.add("dragging");
+  }
+
+  function onDragOver(event) {
+    if (!state.draggingWorkspaceId) return;
+
+    const list = event.target.closest(".workspace-list[data-favorite-group]");
+    if (!list) return;
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    app.querySelectorAll(".workspace-list.drag-over").forEach((item) => {
+      if (item !== list) item.classList.remove("drag-over");
+    });
+    list.classList.add("drag-over");
+  }
+
+  async function onDrop(event) {
+    if (!state.draggingWorkspaceId) return;
+
+    const list = event.target.closest(".workspace-list[data-favorite-group]");
+    if (!list) return;
+
+    event.preventDefault();
+    const targetCard = event.target.closest(".workspace-card");
+    const targetId = targetCard?.dataset.workspaceId || "";
+    const favoriteGroup = list.dataset.favoriteGroup === "true";
+    const insertAfter = targetCard ? event.clientY > targetCard.getBoundingClientRect().top + targetCard.getBoundingClientRect().height / 2 : true;
+
+    await reorderWorkspace(state.draggingWorkspaceId, targetId, favoriteGroup, insertAfter);
+    cleanupDragState();
+  }
+
+  function onDragEnd() {
+    cleanupDragState();
+  }
+
   async function onImportFile(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -720,7 +837,14 @@
   }
 
   async function saveEditingWorkspace() {
-    const workspace = sanitizeWorkspace(getEditingWorkspace());
+    const editing = getEditingWorkspace();
+    const existing = state.workspaces.find((item) => item.id === editing?.id);
+    const now = new Date().toISOString();
+    const workspace = sanitizeWorkspace({
+      ...editing,
+      createdAt: editing?.createdAt || existing?.createdAt || now,
+      updatedAt: now
+    });
 
     if (!workspace.name) {
       showToast("Add a workspace name.");
@@ -755,6 +879,43 @@
       state.view = "list";
       state.editing = null;
       showToast("Workspace deleted.");
+    });
+  }
+
+  async function toggleWorkspaceFavorite(id) {
+    const workspace = state.workspaces.find((item) => item.id === id);
+    if (!workspace) return;
+
+    workspace.favorite = !workspace.favorite;
+    workspace.updatedAt = new Date().toISOString();
+    await persist();
+    showToast(workspace.favorite ? "Added to favorites." : "Removed from favorites.");
+  }
+
+  async function reorderWorkspace(draggedId, targetId, favoriteGroup, insertAfter) {
+    if (!draggedId || draggedId === targetId) return;
+
+    const dragged = state.workspaces.find((workspace) => workspace.id === draggedId);
+    if (!dragged) return;
+
+    dragged.favorite = favoriteGroup;
+    const remaining = state.workspaces.filter((workspace) => workspace.id !== draggedId);
+    const favorites = remaining.filter((workspace) => workspace.favorite);
+    const others = remaining.filter((workspace) => !workspace.favorite);
+    const targetGroup = favoriteGroup ? favorites : others;
+    const targetIndex = targetId ? targetGroup.findIndex((workspace) => workspace.id === targetId) : -1;
+    const insertIndex = targetIndex >= 0 ? targetIndex + (insertAfter ? 1 : 0) : targetGroup.length;
+
+    targetGroup.splice(insertIndex, 0, dragged);
+    state.workspaces = favoriteGroup ? [...targetGroup, ...others] : [...favorites, ...targetGroup];
+    await persist();
+    showToast("Workspace order updated.");
+  }
+
+  function cleanupDragState() {
+    state.draggingWorkspaceId = "";
+    app.querySelectorAll(".workspace-card.dragging, .workspace-list.drag-over").forEach((item) => {
+      item.classList.remove("dragging", "drag-over");
     });
   }
 
@@ -923,6 +1084,9 @@
 
     return {
       ...target,
+      favorite: Boolean(target.favorite || incoming.favorite),
+      createdAt: sanitizeDate(target.createdAt, new Date().toISOString()),
+      updatedAt: new Date().toISOString(),
       tabs
     };
   }
@@ -933,6 +1097,9 @@
       name: workspace.name,
       color: workspace.color,
       icon: sanitizeIcon(workspace.icon),
+      favorite: Boolean(workspace.favorite),
+      createdAt: sanitizeDate(workspace.createdAt, new Date().toISOString()),
+      updatedAt: sanitizeDate(workspace.updatedAt, workspace.createdAt || new Date().toISOString()),
       tabs: workspace.tabs.map((tab) => ({
         ...tab,
         id: createId()
@@ -1038,6 +1205,9 @@
         name: workspace.name,
         color: workspace.color,
         icon: workspace.icon,
+        favorite: workspace.favorite,
+        createdAt: workspace.createdAt,
+        updatedAt: workspace.updatedAt,
         tabs: Array.isArray(workspace.tabs) ? workspace.tabs : workspace.urls
       }))
       .filter((workspace) => workspace.name && workspace.tabs.length);
@@ -1048,12 +1218,17 @@
     const normalizedTabs = tabs
       .map((tab) => sanitizeTab(tab))
       .filter((tab) => tab.url);
+    const now = new Date().toISOString();
+    const createdAt = sanitizeDate(workspace?.createdAt, now);
 
     return {
       id: workspace?.id || createId(),
       name: String(workspace?.name || "").trim().slice(0, 80),
       color: sanitizeColor(workspace?.color),
       icon: sanitizeIcon(workspace?.icon),
+      favorite: Boolean(workspace?.favorite),
+      createdAt,
+      updatedAt: sanitizeDate(workspace?.updatedAt, createdAt),
       tabs: normalizedTabs
     };
   }
@@ -1079,11 +1254,16 @@
   }
 
   function createWorkspace(overrides = {}) {
+    const now = new Date().toISOString();
+
     return {
       id: createId(),
       name: overrides.name || "New Workspace",
       color: overrides.color || COLORS[state.workspaces.length % COLORS.length],
       icon: sanitizeIcon(overrides.icon),
+      favorite: Boolean(overrides.favorite),
+      createdAt: sanitizeDate(overrides.createdAt, now),
+      updatedAt: sanitizeDate(overrides.updatedAt, now),
       tabs: Array.isArray(overrides.tabs) ? overrides.tabs : []
     };
   }
@@ -1103,6 +1283,9 @@
       name: workspace.name,
       color: workspace.color,
       icon: sanitizeIcon(workspace.icon),
+      favorite: Boolean(workspace.favorite),
+      createdAt: sanitizeDate(workspace.createdAt, new Date().toISOString()),
+      updatedAt: sanitizeDate(workspace.updatedAt, workspace.createdAt || new Date().toISOString()),
       tabs: workspace.tabs.map((tab) => ({ ...tab }))
     };
   }
@@ -1175,6 +1358,14 @@
 
   function cleanTitle(value) {
     return String(value || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  }
+
+  function sanitizeDate(value, fallback) {
+    const fallbackDate = new Date(fallback || Date.now());
+    const safeFallback = Number.isNaN(fallbackDate.getTime()) ? new Date() : fallbackDate;
+    const parsed = new Date(value || safeFallback);
+    const date = Number.isNaN(parsed.getTime()) ? safeFallback : parsed;
+    return date.toISOString();
   }
 
   function slugify(value) {

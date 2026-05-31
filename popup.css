@@ -283,27 +283,99 @@ button {
 .workspace-list {
   display: grid;
   gap: 10px;
+  min-height: 18px;
+  border-radius: var(--radius);
+}
+
+.workspace-list.drag-over {
+  outline: 2px dashed rgba(15, 143, 122, 0.28);
+  outline-offset: 4px;
+}
+
+.workspace-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.workspace-group {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+.workspace-group-head h2 {
+  margin: 0;
+  color: #33413d;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.group-count {
+  display: inline-flex;
+  min-width: 22px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #eef3f1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.group-empty {
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .workspace-card {
   position: relative;
   display: grid;
-  grid-template-columns: 5px 1fr auto;
+  grid-template-columns: 5px 1fr;
   align-items: stretch;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: 0 2px 8px rgba(19, 30, 27, 0.05);
+  cursor: grab;
+}
+
+.workspace-card:active {
+  cursor: grabbing;
+}
+
+.workspace-card.dragging {
+  opacity: 0.55;
 }
 
 .workspace-accent {
   background: var(--workspace-color, var(--accent));
 }
 
-.workspace-main {
+.workspace-card-body {
+  display: grid;
+  gap: 8px;
   min-width: 0;
   padding: 12px 10px 12px 12px;
+}
+
+.workspace-main {
+  min-width: 0;
 }
 
 .workspace-name {
@@ -330,10 +402,22 @@ button {
 }
 
 .workspace-name .workspace-label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workspace-card-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.workspace-meta {
+  min-width: 0;
 }
 
 .workspace-favicons {
@@ -341,7 +425,6 @@ button {
   align-items: center;
   gap: 5px;
   min-height: 24px;
-  margin-top: 7px;
   overflow: hidden;
 }
 
@@ -397,12 +480,36 @@ button {
   font-weight: 750;
 }
 
+.workspace-date {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .workspace-actions {
   display: grid;
-  grid-template-columns: 1fr 34px 34px;
+  grid-template-columns: 34px 1fr 34px 34px;
   gap: 8px;
   align-content: center;
-  padding: 10px 10px 10px 0;
+}
+
+.favorite-button {
+  color: #6d7773;
+}
+
+.favorite-button svg path {
+  fill: transparent;
+}
+
+.favorite-button.active {
+  border-color: #f1d597;
+  background: #fff8e8;
+  color: #c78313;
+}
+
+.favorite-button.active svg path {
+  fill: currentColor;
 }
 
 .pill {
@@ -472,6 +579,12 @@ button {
   padding: 14px 14px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+}
+
+.editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .editor-form {
