@@ -4,6 +4,7 @@
   "description": "Save tab workspaces, edit their links, and launch them with one click.",
   "version": "1.0.0",
   "permissions": [
+    "favicon",
     "storage",
     "tabs"
   ],

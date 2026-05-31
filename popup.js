@@ -4,6 +4,20 @@
   const STORAGE_KEY = "workspaceLauncher.workspaces.v1";
   const EXPORT_APP = "one-tab-workspace-launcher";
   const COLORS = ["#0f8f7a", "#2f6fed", "#d9812b", "#b84a3f", "#6d5bd0", "#1d6b86", "#667085", "#2b8a3e"];
+  const WORKSPACE_ICONS = [
+    { icon: "📁", label: "General" },
+    { icon: "💼", label: "Work" },
+    { icon: "💻", label: "Coding" },
+    { icon: "📚", label: "Study" },
+    { icon: "🔎", label: "Research" },
+    { icon: "🎨", label: "Design" },
+    { icon: "🧾", label: "Admin" },
+    { icon: "🛒", label: "Shopping" },
+    { icon: "🎬", label: "Video" },
+    { icon: "🎵", label: "Music" },
+    { icon: "⭐", label: "Personal" },
+    { icon: "✈️", label: "Travel" }
+  ];
 
   const icons = {
     add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>',
@@ -41,6 +55,7 @@
   document.addEventListener("DOMContentLoaded", init);
   app.addEventListener("click", onClick);
   app.addEventListener("input", onInput);
+  app.addEventListener("error", onImageError, true);
   importFile.addEventListener("change", onImportFile);
 
   async function init() {
@@ -155,7 +170,6 @@
   }
 
   function renderWorkspaceCard(workspace) {
-    const firstUrl = workspace.tabs[0]?.url || "No tabs stored";
     const color = sanitizeColor(workspace.color);
 
     return `
@@ -163,10 +177,11 @@
         <div class="workspace-accent" aria-hidden="true"></div>
         <div class="workspace-main">
           <h2 class="workspace-name">
-            <span>${escapeHtml(workspace.name)}</span>
+            <span class="workspace-emoji" aria-hidden="true">${escapeHtml(sanitizeIcon(workspace.icon))}</span>
+            <span class="workspace-label">${escapeHtml(workspace.name)}</span>
             <b class="pill">${workspace.tabs.length}</b>
           </h2>
-          <div class="workspace-url">${escapeHtml(firstUrl)}</div>
+          ${renderFaviconStrip(workspace.tabs)}
         </div>
         <div class="workspace-actions">
           <button class="button primary" type="button" data-action="open-workspace" data-id="${workspace.id}" ${workspace.tabs.length ? "" : "disabled"}>${icons.launch}<span>Open</span></button>
@@ -175,6 +190,35 @@
         </div>
       </article>
     `;
+  }
+
+  function renderFaviconStrip(tabs) {
+    const visibleTabs = tabs.slice(0, 7);
+
+    if (!visibleTabs.length) {
+      return `<div class="workspace-favicons empty">No tabs stored</div>`;
+    }
+
+    return `
+      <div class="workspace-favicons" aria-label="Saved tab favicons">
+        ${visibleTabs.map(renderFaviconChip).join("")}
+        ${tabs.length > visibleTabs.length ? `<span class="favicon-more">+${tabs.length - visibleTabs.length}</span>` : ""}
+      </div>
+    `;
+  }
+
+  function renderFaviconChip(tab) {
+    const label = cleanTitle(tab.title) || readableUrl(tab.url) || "Saved tab";
+    return `<span class="favicon-chip" title="${escapeAttr(label)}">${renderTabFavicon(tab)}</span>`;
+  }
+
+  function renderTabFavicon(tab) {
+    const src = getTabFaviconSrc(tab);
+    if (!src) {
+      return `<span class="favicon-shell missing" aria-hidden="true"></span>`;
+    }
+
+    return `<span class="favicon-shell"><img class="favicon-img" src="${escapeAttr(src)}" alt="" loading="lazy"></span>`;
   }
 
   function renderEmptyState() {
@@ -271,6 +315,15 @@
               </div>
 
               <div class="field">
+                <label>Icon</label>
+                <div class="emoji-picker" role="listbox" aria-label="Workspace icon">
+                  ${WORKSPACE_ICONS.map((option) => `
+                    <button class="emoji-option ${option.icon === sanitizeIcon(workspace.icon) ? "active" : ""}" type="button" data-action="set-icon" data-icon="${escapeAttr(option.icon)}" title="${escapeAttr(option.label)}" aria-label="${escapeAttr(option.label)}">${escapeHtml(option.icon)}</button>
+                  `).join("")}
+                </div>
+              </div>
+
+              <div class="field">
                 <label>Color</label>
                 <div class="swatches" role="listbox" aria-label="Workspace color">
                   ${COLORS.map((color) => `
@@ -303,8 +356,11 @@
   }
 
   function renderTabRow(tab, index, tabs) {
+    const label = cleanTitle(tab.title) || readableUrl(tab.url) || "Saved tab";
+
     return `
       <div class="tab-row" data-tab-id="${tab.id}">
+        <div class="tab-favicon" title="${escapeAttr(label)}">${renderTabFavicon(tab)}</div>
         <div class="tab-inputs">
           <input type="text" value="${escapeAttr(tab.title)}" data-tab-field="title" data-tab-id="${tab.id}" placeholder="Tab title" aria-label="Tab title">
           <input type="url" value="${escapeAttr(tab.url)}" data-tab-field="url" data-tab-id="${tab.id}" placeholder="https://example.com" aria-label="Tab URL">
@@ -464,6 +520,12 @@
       return;
     }
 
+    if (action === "set-icon") {
+      getEditingWorkspace().icon = sanitizeIcon(target.dataset.icon);
+      render();
+      return;
+    }
+
     if (action === "add-tab") {
       getEditingWorkspace().tabs.push(createTabItem());
       render();
@@ -584,7 +646,17 @@
     const tab = workspace.tabs.find((item) => item.id === tabId);
     if (tab) {
       tab[tabField] = event.target.value;
+      if (tabField === "url") {
+        tab.favIconUrl = "";
+      }
     }
+  }
+
+  function onImageError(event) {
+    if (!(event.target instanceof HTMLImageElement) || !event.target.classList.contains("favicon-img")) return;
+
+    event.target.hidden = true;
+    event.target.closest(".favicon-shell")?.classList.add("missing");
   }
 
   async function onImportFile(event) {
@@ -860,6 +932,7 @@
       id: createId(),
       name: workspace.name,
       color: workspace.color,
+      icon: sanitizeIcon(workspace.icon),
       tabs: workspace.tabs.map((tab) => ({
         ...tab,
         id: createId()
@@ -931,7 +1004,8 @@
           .filter((tab) => tab.url && isLaunchableUrl(tab.url))
           .map((tab) => createTabItem({
             title: cleanTitle(tab.title) || readableUrl(tab.url),
-            url: tab.url
+            url: tab.url,
+            favIconUrl: tab.favIconUrl || ""
           }));
         resolve(normalized);
       });
@@ -963,6 +1037,7 @@
         id: createId(),
         name: workspace.name,
         color: workspace.color,
+        icon: workspace.icon,
         tabs: Array.isArray(workspace.tabs) ? workspace.tabs : workspace.urls
       }))
       .filter((workspace) => workspace.name && workspace.tabs.length);
@@ -978,6 +1053,7 @@
       id: workspace?.id || createId(),
       name: String(workspace?.name || "").trim().slice(0, 80),
       color: sanitizeColor(workspace?.color),
+      icon: sanitizeIcon(workspace?.icon),
       tabs: normalizedTabs
     };
   }
@@ -986,17 +1062,19 @@
     if (typeof tab === "string") {
       const url = normalizeUrl(tab);
       return {
-        id: createId(),
-        title: url ? readableUrl(url) : "",
-        url: url || ""
-      };
-    }
+      id: createId(),
+      title: url ? readableUrl(url) : "",
+      url: url || "",
+      favIconUrl: ""
+    };
+  }
 
     const url = normalizeUrl(tab?.url || "");
     return {
       id: tab?.id || createId(),
       title: cleanTitle(tab?.title) || (url ? readableUrl(url) : ""),
-      url: url || ""
+      url: url || "",
+      favIconUrl: sanitizeFaviconUrl(tab?.favIconUrl)
     };
   }
 
@@ -1005,6 +1083,7 @@
       id: createId(),
       name: overrides.name || "New Workspace",
       color: overrides.color || COLORS[state.workspaces.length % COLORS.length],
+      icon: sanitizeIcon(overrides.icon),
       tabs: Array.isArray(overrides.tabs) ? overrides.tabs : []
     };
   }
@@ -1013,7 +1092,8 @@
     return {
       id: createId(),
       title: overrides.title || "",
-      url: overrides.url || ""
+      url: overrides.url || "",
+      favIconUrl: sanitizeFaviconUrl(overrides.favIconUrl)
     };
   }
 
@@ -1022,12 +1102,36 @@
       id: workspace.id,
       name: workspace.name,
       color: workspace.color,
+      icon: sanitizeIcon(workspace.icon),
       tabs: workspace.tabs.map((tab) => ({ ...tab }))
     };
   }
 
   function getEditingWorkspace() {
     return state.editing;
+  }
+
+  function getTabFaviconSrc(tab) {
+    const stored = sanitizeFaviconUrl(tab?.favIconUrl);
+    if (stored) return stored;
+
+    const url = normalizeUrl(tab?.url || "");
+    if (!url || !/^https?:\/\//i.test(url)) return "";
+    if (typeof chrome === "undefined" || !chrome.runtime?.id) return "";
+
+    return `chrome-extension://${chrome.runtime.id}/_favicon/?pageUrl=${encodeURIComponent(url)}&size=32`;
+  }
+
+  function sanitizeFaviconUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+
+    try {
+      const url = new URL(raw);
+      return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+    } catch (error) {
+      return "";
+    }
   }
 
   function normalizeUrl(value) {
@@ -1084,6 +1188,10 @@
 
   function sanitizeColor(value) {
     return COLORS.includes(value) ? value : COLORS[0];
+  }
+
+  function sanitizeIcon(value) {
+    return WORKSPACE_ICONS.some((option) => option.icon === value) ? value : WORKSPACE_ICONS[0].icon;
   }
 
   function plural(count, word) {
