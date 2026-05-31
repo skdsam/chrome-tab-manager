@@ -65,7 +65,9 @@
     return `
       <header class="topbar">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">${brandIcon()}</div>
+          <div class="brand-mark" aria-hidden="true">
+            <img src="icons/icon48.png" alt="">
+          </div>
           <div class="title-stack">
             <h1 class="app-title">Workspace Launcher</h1>
             <div class="meta">${state.workspaces.length} ${plural(state.workspaces.length, "workspace")} · ${totalTabs} ${plural(totalTabs, "tab")}</div>
@@ -762,14 +764,4 @@
     }, 2200);
   }
 
-  function brandIcon() {
-    return `
-      <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
-        <rect x="12" y="16" width="40" height="30" rx="5" fill="#F9FAF8"/>
-        <path d="M16 24h32" stroke="#0F8F7A" stroke-width="5" stroke-linecap="round"/>
-        <path d="M18 34h14M38 34h8" stroke="#22312D" stroke-width="5" stroke-linecap="round"/>
-        <path d="M28 46 42 32 28 18" stroke="#D9812B" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    `;
-  }
 })();
