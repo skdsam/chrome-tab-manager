@@ -1573,8 +1573,7 @@
   }
 
   function normalizeImportedWorkspaces(payload) {
-    const workspaces = Array.isArray(payload) ? payload : payload?.workspaces;
-    if (!Array.isArray(workspaces)) return [];
+    const workspaces = getImportedWorkspaceCandidates(payload);
 
     return workspaces
       .map((workspace) => sanitizeWorkspace({
@@ -1588,6 +1587,28 @@
         tabs: Array.isArray(workspace.tabs) ? workspace.tabs : workspace.urls
       }))
       .filter((workspace) => workspace.name && workspace.tabs.length);
+  }
+
+  function getImportedWorkspaceCandidates(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== "object") return [];
+
+    if (Array.isArray(payload.workspaces)) return payload.workspaces;
+    if (isWorkspaceLike(payload.workspaces)) return [payload.workspaces];
+    if (isWorkspaceLike(payload.workspace)) return [payload.workspace];
+    if (isWorkspaceLike(payload)) return [payload];
+
+    return [];
+  }
+
+  function isWorkspaceLike(value) {
+    return Boolean(
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      "name" in value &&
+      (Array.isArray(value.tabs) || Array.isArray(value.urls))
+    );
   }
 
   function sanitizeWorkspace(workspace) {
