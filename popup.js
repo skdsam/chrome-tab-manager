@@ -4,6 +4,8 @@
   const STORAGE_KEY = "workspaceLauncher.workspaces.v1";
   const WINDOW_LINKS_KEY = "workspaceLauncher.windowLinks.v1";
   const EXPORT_APP = "one-tab-workspace-launcher";
+  const APP_VERSION = getAppVersion();
+  const INITIAL_VIEW = getInitialView();
   const COLORS = ["#0f8f7a", "#2f6fed", "#d9812b", "#b84a3f", "#6d5bd0", "#1d6b86", "#667085", "#2b8a3e"];
   const WORKSPACE_ICONS = [
     { icon: "📁", label: "General" },
@@ -44,8 +46,12 @@
   const app = document.getElementById("app");
   const importFile = document.getElementById("importFile");
 
+  if (INITIAL_VIEW === "import") {
+    document.documentElement.classList.add("standalone-page");
+  }
+
   let state = {
-    view: "list",
+    view: INITIAL_VIEW,
     workspaces: [],
     windowLinks: {},
     currentWindowId: null,
@@ -126,7 +132,7 @@
           </div>
           <div class="title-stack">
             <h1 class="app-title">Workspace Launcher</h1>
-            <div class="meta">${state.workspaces.length} ${plural(state.workspaces.length, "workspace")} - ${totalTabs} ${plural(totalTabs, "tab")}</div>
+            <div class="meta">${renderVersionMeta(`${state.workspaces.length} ${plural(state.workspaces.length, "workspace")} - ${totalTabs} ${plural(totalTabs, "tab")}`)}</div>
           </div>
         </div>
       </header>
@@ -416,7 +422,7 @@
           <button class="icon-button" type="button" data-action="back" title="Back" aria-label="Back">${icons.arrowLeft}</button>
           <div class="title-stack">
             <h1 class="editor-title">Hard Reset</h1>
-            <div class="meta">${workspaceCount} ${plural(workspaceCount, "workspace")} - ${tabCount} ${plural(tabCount, "tab")}</div>
+            <div class="meta">${renderVersionMeta(`${workspaceCount} ${plural(workspaceCount, "workspace")} - ${tabCount} ${plural(tabCount, "tab")}`)}</div>
           </div>
           <button class="icon-button danger" type="button" data-action="confirm-reset" title="Delete all" aria-label="Delete all" ${canReset ? "" : "disabled"}>${icons.trash}</button>
         </header>
@@ -461,7 +467,7 @@
           <button class="icon-button" type="button" data-action="back" title="Back" aria-label="Back">${icons.arrowLeft}</button>
           <div class="title-stack">
             <h1 class="editor-title">${escapeHtml(workspace.name || "Untitled Workspace")}</h1>
-            <div class="meta">${tabCount} ${plural(tabCount, "tab")} stored</div>
+            <div class="meta">${renderVersionMeta(`${tabCount} ${plural(tabCount, "tab")} stored`)}</div>
           </div>
           <div class="editor-header-actions">
             <button class="icon-button favorite-button ${workspace.favorite ? "active" : ""}" type="button" data-action="toggle-editing-favorite" title="${workspace.favorite ? "Remove from favorites" : "Add to favorites"}" aria-label="${workspace.favorite ? "Remove from favorites" : "Add to favorites"}" aria-pressed="${workspace.favorite ? "true" : "false"}">${icons.star}</button>
@@ -548,7 +554,7 @@
           <button class="icon-button" type="button" data-action="back" title="Back" aria-label="Back">${icons.arrowLeft}</button>
           <div class="title-stack">
             <h1 class="editor-title">Import Workspaces</h1>
-            <div class="meta">${preview ? `${preview.workspaces.length} ${plural(preview.workspaces.length, "workspace")} ready` : "Choose a JSON export"}</div>
+            <div class="meta">${renderVersionMeta(preview ? `${preview.workspaces.length} ${plural(preview.workspaces.length, "workspace")} ready` : "Choose a JSON export")}</div>
           </div>
           <button class="icon-button" type="button" data-action="choose-import-file" title="Choose file" aria-label="Choose file">${icons.file}</button>
         </header>
@@ -561,6 +567,7 @@
                   ${icons.import}
                   <h2>Select an export file</h2>
                   <p>Import workspaces from a JSON file created by this extension.</p>
+                  <button class="button primary empty-state-action" type="button" data-action="choose-import-file">${icons.file}<span>Choose File</span></button>
                 </div>
               </section>
             `}
@@ -811,12 +818,7 @@
     }
 
     if (action === "import") {
-      state.view = "import";
-      state.importPreview = null;
-      state.importConflictMode = "rename";
-      render();
-      importFile.value = "";
-      importFile.click();
+      openImportPage();
       return;
     }
 
@@ -944,8 +946,8 @@
     if (!file) return;
 
     try {
-      const text = await file.text();
-      const payload = JSON.parse(text);
+      const text = await readImportFile(file);
+      const payload = JSON.parse(stripJsonBom(text));
       const workspaces = normalizeImportedWorkspaces(payload);
 
       if (!workspaces.length) {
@@ -963,6 +965,46 @@
     } catch (error) {
       showToast("Import failed. Check the JSON file.");
     }
+  }
+
+  function openImportPage() {
+    if (INITIAL_VIEW === "import") {
+      showImportView();
+      return;
+    }
+
+    if (typeof chrome !== "undefined" && chrome.tabs?.create && chrome.runtime?.getURL) {
+      chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?view=import"), active: true }, () => {
+        if (chrome.runtime.lastError) {
+          showImportView();
+        }
+      });
+      return;
+    }
+
+    showImportView();
+  }
+
+  function showImportView() {
+    state.view = "import";
+    state.importPreview = null;
+    state.importConflictMode = "rename";
+    render();
+  }
+
+  function readImportFile(file) {
+    if (file.text) return file.text();
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(reader.result || ""));
+      reader.addEventListener("error", () => reject(reader.error || new Error("Unable to read file.")));
+      reader.readAsText(file);
+    });
+  }
+
+  function stripJsonBom(value) {
+    return String(value || "").replace(/^\uFEFF/, "");
   }
 
   async function createWorkspaceFromCurrentWindow() {
@@ -1785,6 +1827,31 @@
 
   function plural(count, word) {
     return count === 1 ? word : `${word}s`;
+  }
+
+  function renderVersionMeta(value) {
+    return `${value} - v${escapeHtml(APP_VERSION)}`;
+  }
+
+  function getInitialView() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("view") === "import" ? "import" : "list";
+    } catch (error) {
+      return "list";
+    }
+  }
+
+  function getAppVersion() {
+    try {
+      if (typeof chrome !== "undefined" && chrome.runtime?.getManifest) {
+        return chrome.runtime.getManifest().version || "dev";
+      }
+    } catch (error) {
+      return "dev";
+    }
+
+    return "dev";
   }
 
   function escapeHtml(value) {
